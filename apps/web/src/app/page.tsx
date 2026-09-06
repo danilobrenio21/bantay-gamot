@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { Search, MapPin, Phone, ShieldCheck, AlertCircle } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
+import { collection, query as firestoreQuery, where, getDocs } from 'firebase/firestore';
 
 interface SearchResult {
   facility_name: string;
@@ -25,31 +26,22 @@ export default function SearchPage() {
     if (!query.trim()) return;
 
     setLoading(true);
-    const { data } = await supabase
-      .from('facility_inventory')
-      .select(`
-        units_available,
-        is_free_subsidy,
-        medicines!inner(generic_name, dosage),
-        facilities!inner(name, city, barangay, contact_phone, is_verified)
-      `)
-      .ilike('medicines.generic_name', `%${query}%`)
-      .gt('units_available', 0)
-      .limit(10);
-
-    if (data) {
-      setResults(
-        data.map((row: any) => ({
-          facility_name: row.facilities.name,
-          city: row.facilities.city,
-          barangay: row.facilities.barangay,
-          phone: row.facilities.contact_phone,
-          generic_name: row.medicines.generic_name,
-          dosage: row.medicines.dosage,
-          units_available: row.units_available,
-          is_free_subsidy: row.is_free_subsidy,
-        }))
+    try {
+      const q = firestoreQuery(
+        collection(db, 'inventory'),
+        where('generic_name_lower', '>=', query.toLowerCase()),
+        where('generic_name_lower', '<=', query.toLowerCase() + '\uf8ff')
       );
+
+      const snapshot = await getDocs(q);
+      const items: SearchResult[] = [];
+      snapshot.forEach((doc) => {
+        items.push(doc.data() as SearchResult);
+      });
+
+      setResults(items);
+    } catch (err) {
+      console.error('Error fetching inventory:', err);
     }
     setLoading(false);
   };
